@@ -116,7 +116,7 @@ gen.haystack.df <- function(seed, d.sig, d.max, N, omit.percent, std.sig, std.no
 mem.gen.haystack.df <- memoize(gen.haystack.df)
 
 gen.imputation.val <- function(d.max, d.sig, d.noise, N, method, train_seed, inf_seed, omit.percent, std.sig, std.noise) {
-  print(paste("GETTING DATA: ", d.max,  d.sig, d.noise, N, method, train_seed, inf_seed, omit.percent, std.sig, std.noise))
+  print(paste("GETTING DATA: ", d.max,  d.sig, d.noise, N, method[["name"]], train_seed, inf_seed, omit.percent, std.sig, std.noise))
 
    res = mem.gen.haystack.df(train_seed, d.sig, d.max, N, omit.percent, std.sig, std.noise)
    full.df = res[["full"]][, 1:(d.sig+d.noise)]
@@ -124,13 +124,13 @@ gen.imputation.val <- function(d.max, d.sig, d.noise, N, method, train_seed, inf
       
    set.seed(inf_seed)
       
-   if (method == "hastie") {
+   if (method[["name"]] == "hastie") {
     
-    res <- impute.knn(t(missing.df), k = 1)
+    res <- impute.knn(t(missing.df), k = method[["k"]])
     imputed.df <- as.data.frame(t(res[["data"]]))
     .Random.seed <<- res[["rng.state"]]
     
-   } else if (method == "avg") {
+   } else if (method[["name"]] == "avg") {
      colavgs <- c()
      for (col in names(full.df)) {
       colavgs <- c(colavgs, mean(full.df[,col]))
@@ -147,7 +147,7 @@ gen.imputation.val <- function(d.max, d.sig, d.noise, N, method, train_seed, inf
      }
      imputed.df <- as.data.frame(mat)
      
-   } else if (method == "random") {
+   } else if (method[["name"]] == "random") {
      mat <- as.matrix(missing.df)
      full.mat <- as.matrix(full.df)
      for (i in 1:dim(full.df)[1]) {
@@ -158,17 +158,17 @@ gen.imputation.val <- function(d.max, d.sig, d.noise, N, method, train_seed, inf
        }
      }
      imputed.df <- as.data.frame(mat)
-   } else if (method == "veritable") {
+   } else if (method[["name"]] == "veritable") {
     mat <- as.matrix(missing.df)
     ds <- as.veritable.dataset(missing.df)
     datatypes(ds) <- "continuous"
-    h <- start.analysis(ds, samples = 10, iterations = 500, max_time = 3600)
+    h <- start.analysis(ds, samples = method[["samples"]], iterations = method[["iterations"]], max_time = method[["max_time"]])
     res <- wait.for.analysis(h, ds)
     plot(feature.zmatrix(res))
     ph <- list()
     for (i in 1:dim(missing.df)[1]) {
       if (length(which(is.na(missing.df[i,]))) != 0) {
-        ph[[i]] <- start.predictions(h, ds, 1000, fixed.features = missing.df[i, names(missing.df)[-which(is.na(missing.df[i,]))]], predicted.features = names(missing.df)[which(is.na(missing.df[i,]))])
+        ph[[i]] <- start.predictions(h, ds, method[["predictions"]], fixed.features = missing.df[i, names(missing.df)[-which(is.na(missing.df[i,]))]], predicted.features = names(missing.df)[which(is.na(missing.df[i,]))])
       } else {
         ph[[i]] <- "NONE"
       }
@@ -206,54 +206,48 @@ mem.gen.imputation.val <- memoize(gen.imputation.val)
 if(exists(".Random.seed")) rm(.Random.seed)
 set.seed(0)
 
-#methods <- list(
-#  list("hastie"
-#)
-methods <- c("hastie")
-#methods <- c("hastie", "avg", "random")
-#methods <- c("hastie", "avg", "random", "veritable")
-colors <- list(hastie = "#FF0000FF", avg = "#00FF00FF", random = "#0000FFFF", veritable = "#8000FFFF")
-d.sig <- 10
-d.noise <- seq(from = 0, to = 500, by = 10)
-#d.noise = 5
-#d.noise <- c(0, 1, 5, 15)
-d.max <- max(d.noise) + d.sig
-std.sig <- 0.05
-std.noise <- 0.05
-#std.noise <- 100
-N <- 100
-#omit.percent <- seq(1, 20, by = 1)
-omit.percent <- 5
-#omit.percent <- c(10, 50, 70)
+methods <- list(
+  list(name = "hastie", k = 1, color = "#FF0000FF"),
+  list(name = "avg", color = "#00FF00FF"),
+  list(name = "random", color = "#0000FFFF"),
+  list(name = "veritable",
+       samples = 10,
+       iterations = 500,
+       max_time = 3600,
+       predictions = 1000,
+       color = "#8000FFFF")
+)
 
-res = mem.gen.haystack.df(0, d.sig, d.max, N, 10, std.sig, std.noise)
-full.df = res[["full"]][,]
-missing.df = res[["missing"]][,]
+SEED <- 0
 
-pdf(file = paste("hastie_converge", std.noise, ".pdf", sep = ""), onefile = TRUE)
+experiment <- list(
+  name = "5pctomit",
+  methods = methods,
+  d.sig = 10,
+  d.noise = 0:10,
+  d.max = 20,
+  std.sig = 0.05,
+  std.noise = 0.05,
+  N = 100,
+  omit.percent = 5
+)
 
-#lapply(omit.percent, function (pct) {
-#results = lapply(methods, function(method) {
-#            list(method, lapply(d.noise, function(d.noise) {
-#              mem.gen.imputation.val(d.max, d.sig, d.noise, N, method, 0, 0, pct, std.sig, std.noise)
-#            }))
-#          })
-#
-#plot(d.noise, rep(NA, length(d.noise)), ylim=c(0, 1), main = paste(pct, "% omitted", sep = ""))
-#lapply(results, function(res) {
-#    # needs to be labeled with res[[1]]
-#    print(paste(res[[1]], res[[2]]))
-#    lines(d.noise, res[[2]], col = colors[[res[[1]]]])
-#})
-#})
-
-results <- list()
-for (i in 1:100) {
-  result <- c()
-  for (j in d.noise) {
-    result <- c(result, mem.gen.imputation.val(d.max, d.sig, j, N, methods[[1]], 0, 0, omit.percent, std.sig, std.noise))
-  }
-  results[[i]] <- result
+run.experiment <- function (experiment) {
+  pdf(file = paste(experiment[["name"]], ".pdf", sep = ""), onefile = TRUE)
+  
+  lapply(experiment[["omit.percent"]], function (pct) {
+    results <- lapply(experiment[["methods"]], function (method) {
+      lapply(experiment[["d.noise"]], function (d.noise) {
+        mem.gen.imputation.val(experiment[["d.max"]], experiment[["d.sig"]], d.noise, experiment[["N"]], method, 0, 0, pct, experiment[["std.sig"]], experiment[["std.noise"]])
+      })
+    })
+  })
+  
+  plot(d.noise, rep(NA, length(d.noise)), ylim=c(0, 1), main = paste(pct, "% omitted", sep = ""))
+  lapply(results, function(res) {
+    # needs to be labeled with res[[1]]
+    print(paste(res[[1]][["name"]], res[[2]]))
+    lines(d.noise, res[[2]], col = res[[1]][["color"]])
+  })
+  dev.off()
 }
-lapply(results, function (r) plot(d.noise, r, type ="l"))
-dev.off()
